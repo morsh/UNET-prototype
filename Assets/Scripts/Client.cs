@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
@@ -16,6 +17,7 @@ public class Client : MonoBehaviour {
     private int reliableChannel;
     private int unreliableChannel;
 
+    private int selfClientId = -1;
     private int connectionId;
 
     private float connectionTime;
@@ -67,14 +69,59 @@ public class Client : MonoBehaviour {
         NetworkEventType recData = NetworkTransport.Receive(out recHostId, out connectionId, out channelId, recBuffer, bufferSize, out dataSize, out error);
         switch (recData)
         {
-            case NetworkEventType.Nothing:         //1
-                break;
-            case NetworkEventType.ConnectEvent:    //2
-                break;
             case NetworkEventType.DataEvent:       //3
-                break;
-            case NetworkEventType.DisconnectEvent: //4
+                string message = Encoding.Unicode.GetString(recBuffer, 0, dataSize);
+                Debug.Log("Receiving : " + message);
+
+                var parts = message.Split('|');
+
+                switch (parts.Length > 0 ? parts[0] : "")
+                {
+                    case "ASKNAME":
+                        OnAskName(parts);
+                        break;
+
+                    case "UPD":
+                        break;
+
+                    case "DC":
+                        break;
+
+                    default:
+                        Debug.Log("Invalid message : " + message);
+                        break;
+                }
                 break;
         }
+    }
+
+    private void OnAskName(string[] data)
+    {
+        // Set self client's id
+        selfClientId = int.Parse(data[1]);
+
+        // Send self name to server
+        Send("NAMEIS|" + playerName, reliableChannel);
+
+        // Create all the other players
+        for (int i = 2; i < data.Length - 1; i++)
+        {
+            string otherClientId = data[i].Substring(0, data[i].IndexOf('%'));
+            string otherClientName = data[i].Substring(data[i].IndexOf('%') + 1);
+            SpawnPlayer(otherClientId, otherClientName);
+        }
+    }
+
+    private void Send(string message, int channelId)
+    {
+        Debug.Log("Sending : " + message);
+        byte[] msg = Encoding.Unicode.GetBytes(message);
+        NetworkTransport.Send(hostId, connectionId, channelId, msg, message.Length * sizeof(char), out error);
+
+    }
+
+    private void SpawnPlayer(string id, string name)
+    {
+
     }
 }

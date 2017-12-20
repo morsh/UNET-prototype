@@ -4,6 +4,12 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
 
+public class ServerClient
+{
+    public int connectionId;
+    public string playerName;
+}
+
 public class Server : MonoBehaviour {
     private const int MAX_CONNECTIONS = 100;
 
@@ -17,6 +23,8 @@ public class Server : MonoBehaviour {
 
     private bool isStarted = false;
     private byte error;
+
+    private List<ServerClient> clients = new List<ServerClient>();
 
     private void Start()
     {
@@ -51,18 +59,90 @@ public class Server : MonoBehaviour {
         NetworkEventType recData = NetworkTransport.Receive(out recHostId, out connectionId, out channelId, recBuffer, bufferSize, out dataSize, out error);
         switch (recData)
         {
-            case NetworkEventType.Nothing:         //1
-                break;
             case NetworkEventType.ConnectEvent:    //2
+                OnConnection(connectionId);
                 Debug.Log("Player " + connectionId + " has connected");
                 break;
             case NetworkEventType.DataEvent:       //3
-                string msg = Encoding.Unicode.GetString(recBuffer, 0, dataSize);
-                Debug.Log("Player " + connectionId + " has sent : " + msg);
+                string message = Encoding.Unicode.GetString(recBuffer, 0, dataSize);
+                Debug.Log("Receving from " + connectionId + " has sent : " + message);
+
+                var parts = message.Split('|');
+
+                switch (parts.Length > 0 ? parts[0] : "")
+                {
+                    case "NAMEIS":
+                        OnNameIs(connectionId, parts);
+                        break;
+
+                    case "CNN":
+                        break;
+
+                    case "DC":
+                        break;
+
+                    default:
+                        Debug.Log("Invalid message : " + message);
+                        break;
+                }
                 break;
             case NetworkEventType.DisconnectEvent: //4
                 Debug.Log("Player " + connectionId + " has disconnected");
                 break;
         }
+    }
+
+    private void OnConnection(int connectionId)
+    {
+        // Add user to a list
+        ServerClient client = new ServerClient();
+        client.connectionId = connectionId;
+        client.playerName = "TEMP";
+        clients.Add(client);
+
+        // When the platey joins the server, tell him his id
+        // Reequest his name and send the name of all the other players
+        string message = "ASKNAME|" + connectionId + "|";
+        foreach(var serverClient in clients)
+        {
+            message += serverClient.playerName + '%' + serverClient.connectionId + '|';
+        }
+
+        message = message.Trim('|');
+
+        // Expected message:
+        // ASKNAME|3|DAVE%1|LINA%2|TEMP%3
+        Send(message, reliableChannel, connectionId);
+    }
+
+    private void Send(string message, int channelId, int connectionId)
+    {
+        List<ServerClient> clientsArray = new List<ServerClient>();
+        clientsArray.Add(clients.Find(c => c.connectionId == connectionId));
+        Send(message, channelId, clientsArray);
+    }
+
+    private void Send(string message, int channelId, List<ServerClient> clients)
+    {
+        Debug.Log("Sending : " + message);
+        byte[] msg = Encoding.Unicode.GetBytes(message);
+
+        foreach (var client in clients)
+        {
+            NetworkTransport.Send(hostId, client.connectionId, channelId, msg, message.Length * sizeof(char), out error);
+        }
+
+    }
+
+    private void OnNameIs(int connectionId, string[] data)
+    {
+        var playerName = data[1];
+
+        // Link the name to the connection Id
+        var clientToUpdate = clients.Find(c => c.connectionId == connectionId);
+        clientToUpdate.playerName = playerName;
+
+        // Tell everyone that a new player has connected
+        Send("UPD|" + connectionId + '|' + playerName, reliableChannel, clients);
     }
 }
