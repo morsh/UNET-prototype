@@ -7,3 +7,6 @@ Open main folder in Unity, open `File > Build Settings` build into `./build/clie
 Execute the client (double click).
 
 Then execute the server by opening `Scenes/Server` in unity and pressing `Play`.
+
+# License
+MIT License
