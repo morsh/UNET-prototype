@@ -1,14 +1,9 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
-
-public class ServerClient
-{
-    public int connectionId;
-    public string playerName;
-}
 
 public class Server : MonoBehaviour {
     private const int MAX_CONNECTIONS = 100;
@@ -26,8 +21,13 @@ public class Server : MonoBehaviour {
 
     private List<ServerClient> clients = new List<ServerClient>();
 
+    private float lastMovementUpdate;
+    private float movementUpdateRate = 0.05f;
+
     private void Start()
     {
+        Application.runInBackground = true;
+
         NetworkTransport.Init();
         ConnectionConfig connectionConfig = new ConnectionConfig();
 
@@ -75,10 +75,8 @@ public class Server : MonoBehaviour {
                         OnNameIs(connectionId, parts);
                         break;
 
-                    case "CNN":
-                        break;
-
-                    case "DC":
+                    case "UPDPOSITION":
+                        OnUpdatePosition(connectionId, parts[1]);
                         break;
 
                     default:
@@ -87,9 +85,29 @@ public class Server : MonoBehaviour {
                 }
                 break;
             case NetworkEventType.DisconnectEvent: //4
+                OnPlayerDisconnected(connectionId);
                 Debug.Log("Player " + connectionId + " has disconnected");
                 break;
         }
+
+        // Ask player for their position
+        if (Time.time - lastMovementUpdate > movementUpdateRate)
+        {
+            lastMovementUpdate = Time.time;
+
+            var message = "ASKPOSITION|";
+            clients.ForEach(c => message += c.ToStateString() + "|");
+            Send(message.Trim('|'), unreliableChannel, clients);
+        }
+    }
+
+    private void OnPlayerDisconnected(int connectionId)
+    {
+        // Remove player from client list
+        clients.Remove(clients.Find(c => c.connectionId == connectionId));
+
+        // Tell everyone a player has disconnected
+        Send("DC|" + connectionId, reliableChannel, clients);
     }
 
     private void OnConnection(int connectionId)
@@ -105,7 +123,7 @@ public class Server : MonoBehaviour {
         string message = "ASKNAME|" + connectionId + "|";
         foreach(var serverClient in clients)
         {
-            message += serverClient.playerName + '%' + serverClient.connectionId + '|';
+            message += serverClient.connectionId + "%" + serverClient.playerName + "|";
         }
 
         message = message.Trim('|');
@@ -144,5 +162,11 @@ public class Server : MonoBehaviour {
 
         // Tell everyone that a new player has connected
         Send("UPD|" + connectionId + '|' + playerName, reliableChannel, clients);
+    }
+
+    private void OnUpdatePosition(int connectionId, string state)
+    {
+        var client = ServerClient.LoadPosition(state);
+        clients.Find(c => c.connectionId == connectionId).position = client.position;
     }
 }
